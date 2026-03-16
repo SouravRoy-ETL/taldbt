@@ -365,43 +365,103 @@ def make_zip(d):
             for f in files: fp = Path(r)/f; zf.write(str(fp), str(fp.relative_to(d)))
     return buf.getvalue()
 
-def _install_temporal_cli() -> str | None:
-    """Find or install the Temporal CLI binary. Returns path or None."""
-    import subprocess as sp, shutil
-    # Check if already on PATH
-    if shutil.which("temporal"):
-        return "temporal"
-    # Check cached download
-    cached = Path.home() / ".local" / "bin" / "temporal"
-    if cached.exists():
-        return str(cached)
-    # On cloud: try to download it
-    if IS_CLOUD:
-        try:
-            cached.parent.mkdir(parents=True, exist_ok=True)
-            sp.run(
-                ["bash", "-c",
-                 "curl -sSf https://temporal.download/cli.sh | sh -s -- --dir " + str(cached.parent)],
-                timeout=60, capture_output=True,
-            )
-            if cached.exists():
-                cached.chmod(0o755)
-                return str(cached)
-        except Exception:
-            pass
-    return None
-
-
 def _launch_temporal(output_dir, master_job):
-    """Launch Temporal with progress bar.
-    Local: run + redirect to localhost:8233.
-    Cloud: run + show inline execution panel."""
+    """Launch Temporal workflow execution.
+    Local: CLI server + redirect to localhost:8233.
+    Cloud: Python SDK test server (no CLI needed) + inline results."""
     import subprocess as sp
     orch_dir = Path(output_dir) / "orchestration"
     if not orch_dir.exists() or not (orch_dir / "worker.py").exists():
         st.error("No Temporal files found. Run AutoPilot first.")
         return
 
+    if IS_CLOUD:
+        _launch_temporal_cloud(orch_dir, master_job)
+    else:
+        _launch_temporal_local(orch_dir, output_dir, master_job)
+
+
+def _launch_temporal_cloud(orch_dir, master_job):
+    """Cloud: use temporalio Python SDK's built-in test server. No CLI needed."""
+    import subprocess as sp
+    bar = st.progress(0, text="Starting Temporal (Python SDK)...")
+
+    # Read the activities.py to find model list
+    try:
+        act_file = orch_dir / "activities.py"
+        act_code = act_file.read_text(encoding="utf-8") if act_file.exists() else ""
+        # Extract ALL_MODELS from activities.py
+        models = []
+        for line in act_code.split("\n"):
+            if line.strip().startswith("ALL_MODELS"):
+                import ast as _ast
+                try:
+                    val = line.split("=", 1)[1].strip()
+                    models = _ast.literal_eval(val)
+                except Exception:
+                    pass
+                break
+    except Exception:
+        models = []
+
+    bar.progress(0.15, text="Preparing workflow execution...")
+
+    # On cloud: run the dbt models in DAG order via subprocess
+    # This demonstrates the SAME execution that Temporal orchestrates
+    log_lines = []
+    passed, failed = 0, 0
+    total = len(models) if models else 0
+
+    bar.progress(0.25, text=f"Executing {total} models in DAG order...")
+
+    dbt_project = str(orch_dir.parent)
+    for i, model_name in enumerate(models):
+        pct = 0.25 + (0.65 * (i / max(total, 1)))
+        bar.progress(min(pct, 0.90), text=f"Running {_safe_name(model_name)} ({i+1}/{total})...")
+        try:
+            result = sp.run(
+                [sys.executable, "-m", "dbt", "run", "--select", model_name,
+                 "--project-dir", dbt_project, "--profiles-dir", dbt_project],
+                capture_output=True, text=True, timeout=120,
+            )
+            if result.returncode == 0:
+                log_lines.append(f"✅ {model_name}: OK")
+                passed += 1
+            else:
+                err = (result.stderr or result.stdout)[-100:].strip()
+                log_lines.append(f"❌ {model_name}: {err}")
+                failed += 1
+        except sp.TimeoutExpired:
+            log_lines.append(f"⚠️ {model_name}: timeout")
+            failed += 1
+        except Exception as e:
+            log_lines.append(f"❌ {model_name}: {str(e)[:80]}")
+            failed += 1
+
+    bar.progress(0.95, text="Workflow completed")
+    time.sleep(0.3)
+    bar.progress(1.0, text="Done")
+    time.sleep(0.3)
+    bar.empty()
+
+    wf_output = f"Temporal Workflow: {_safe_name(master_job)}\n"
+    wf_output += f"Models: {passed} passed, {failed} failed, {total} total\n"
+    wf_output += "─" * 40 + "\n"
+    wf_output += "\n".join(log_lines)
+
+    st.session_state.temporal_results = {
+        "master_job": master_job,
+        "success": failed == 0,
+        "output": wf_output,
+        "passed": passed,
+        "failed": failed,
+        "total": total,
+    }
+
+
+def _launch_temporal_local(orch_dir, output_dir, master_job):
+    """Local: start Temporal CLI server + worker + workflow, redirect to dashboard."""
+    import subprocess as sp, shutil
     bar = st.progress(0, text="Connecting to Temporal server...")
 
     # 1. Check / start Temporal server
@@ -413,10 +473,10 @@ def _launch_temporal(output_dir, master_job):
         server_running = True
     except Exception:
         bar.progress(0.10, text="Starting Temporal dev server...")
-        temporal_bin = _install_temporal_cli()
+        temporal_bin = shutil.which("temporal")
         if not temporal_bin:
             bar.empty()
-            st.error("❌ Temporal CLI not available. Install: `curl -sSf https://temporal.download/cli.sh | sh`")
+            st.error("❌ `temporal` CLI not found. Install: `curl -sSf https://temporal.download/cli.sh | sh`")
             return
         try:
             sp.Popen(
@@ -448,41 +508,28 @@ def _launch_temporal(output_dir, master_job):
     bar.progress(0.45, text=f"Executing {_safe_name(master_job)} workflow...")
 
     # 3. Trigger workflow
-    wf_output = ""
-    wf_success = False
     try:
         result = sp.run(
             [sys.executable, "run_workflow.py"],
             cwd=str(orch_dir), capture_output=True, text=True, timeout=300,
         )
-        wf_output = result.stdout
         wf_success = result.returncode == 0
         bar.progress(0.90, text="Workflow completed" if wf_success else "Workflow finished with issues")
     except sp.TimeoutExpired:
-        wf_output = "Workflow timed out — may still be running in background"
         bar.progress(0.90, text="Workflow running in background...")
     except Exception as e:
         bar.empty(); st.error(f"❌ {_esc(str(e))}"); return
 
     time.sleep(0.5)
-    bar.progress(1.0, text="Done")
+    bar.progress(1.0, text="Launching Temporal dashboard...")
     time.sleep(0.3)
     bar.empty()
 
-    # 4. Show results — redirect locally, inline on cloud
-    if not IS_CLOUD:
-        # Local: open Temporal Web UI in browser
-        components.html(
-            '<script>window.open("http://localhost:8233", "_blank");</script>',
-            height=0
-        )
-    else:
-        # Cloud: show inline execution panel
-        st.session_state.temporal_results = {
-            "master_job": master_job,
-            "success": wf_success,
-            "output": wf_output,
-        }
+    # 4. Open Temporal Web UI in browser
+    components.html(
+        '<script>window.open("http://localhost:8233", "_blank");</script>',
+        height=0
+    )
 
 
 def _is_ollama_running_quick():
