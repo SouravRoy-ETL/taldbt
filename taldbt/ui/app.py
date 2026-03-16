@@ -928,25 +928,54 @@ elif step == 4:
                 _, tc1, _ = st.columns([1, 2, 1])
                 with tc1:
                     if st.session_state.temporal_launched:
-                        # Show post-launch state
                         t_res = st.session_state.get("temporal_results")
                         if IS_CLOUD and t_res:
-                            # Cloud: inline execution panel
-                            _icon = '✅' if t_res.get('success') else '⚠️'
+                            # ── CLOUD: inline Temporal execution dashboard ──
+                            _t_passed = t_res.get('passed', 0)
+                            _t_failed = t_res.get('failed', 0)
+                            _t_total = t_res.get('total', 0)
+                            _t_ok = t_res.get('success', False)
+                            _t_icon = '✅' if _t_ok else '⚠️'
                             st.markdown(
-                                f'<div style="text-align:center;padding:16px;background:#1a2240;border-radius:12px;'
-                                f'border:1px solid #2e4268;">'
-                                f'<div style="color:#a78bfa;font-weight:700;font-size:1.05rem;margin-bottom:8px;">'
-                                f'{_icon} Temporal Workflow Executed</div>'
-                                f'<div style="color:#7888a0;font-size:0.85rem;">'
-                                f'Workflow: {_safe_name(t_res.get("master_job",""))}</div></div>',
+                                f'<div style="background:#0f1729;border:1px solid #2e4268;border-radius:14px;'
+                                f'padding:20px 24px;margin-bottom:8px;">'
+                                f'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">'
+                                f'<div style="display:flex;align-items:center;gap:10px;">'
+                                f'<span style="font-size:1.4rem;">{_t_icon}</span>'
+                                f'<div><div style="color:#a78bfa;font-weight:700;font-size:1.05rem;">'
+                                f'Temporal Workflow Executed</div>'
+                                f'<div style="color:#7888a0;font-size:0.8rem;margin-top:2px;">'
+                                f'{_safe_name(t_res.get("master_job",""))}</div></div></div>'
+                                f'<div style="display:flex;gap:16px;">'
+                                f'<div style="text-align:center;padding:8px 16px;background:#0d2a22;border-radius:8px;">'
+                                f'<div style="color:#10b981;font-size:1.3rem;font-weight:700;font-family:JetBrains Mono,monospace;">{_t_passed}</div>'
+                                f'<div style="color:#6b8068;font-size:0.7rem;text-transform:uppercase;">passed</div></div>'
+                                f'<div style="text-align:center;padding:8px 16px;background:{"#2d1118" if _t_failed else "#131b30"};border-radius:8px;">'
+                                f'<div style="color:{"#ef4444" if _t_failed else "#3a4560"};font-size:1.3rem;font-weight:700;font-family:JetBrains Mono,monospace;">{_t_failed}</div>'
+                                f'<div style="color:{"#8b4444" if _t_failed else "#3a4560"};font-size:0.7rem;text-transform:uppercase;">failed</div></div>'
+                                f'<div style="text-align:center;padding:8px 16px;background:#131b30;border-radius:8px;">'
+                                f'<div style="color:#a78bfa;font-size:1.3rem;font-weight:700;font-family:JetBrains Mono,monospace;">{_t_total}</div>'
+                                f'<div style="color:#6b6898;font-size:0.7rem;text-transform:uppercase;">total</div></div>'
+                                f'</div></div>'
+                                f'<div style="width:100%;height:6px;background:#1a2240;border-radius:3px;overflow:hidden;">'
+                                f'<div style="width:{int(_t_passed/_t_total*100) if _t_total else 0}%;height:100%;'
+                                f'background:linear-gradient(90deg,#10b981,#34d399);border-radius:3px;"></div></div></div>',
                                 unsafe_allow_html=True
                             )
                             if t_res.get("output"):
-                                with st.expander("📋 Temporal execution log", expanded=True):
+                                with st.expander("📋 Temporal execution log", expanded=False):
                                     st.code(t_res["output"][:3000], language="text")
+                            # Prompt to download Docker for full Temporal dashboard
+                            st.markdown(
+                                '<div style="text-align:center;padding:10px;margin-top:6px;'
+                                'background:#1a1a2e;border:1px dashed #2e4268;border-radius:10px;">'
+                                '<span style="color:#7888a0;font-size:0.82rem;">'
+                                '🐳 For the full Temporal dashboard, download the dbt ZIP and run locally with Docker'
+                                '</span></div>',
+                                unsafe_allow_html=True
+                            )
                         else:
-                            # Local: link to dashboard
+                            # ── LOCAL: redirect to Temporal Web UI ──
                             st.markdown(
                                 '<div style="text-align:center;padding:14px;background:#1a2240;border-radius:12px;'
                                 'border:1px solid #2e4268;color:#a78bfa;font-weight:600;">'
@@ -963,6 +992,8 @@ elif step == 4:
                             if not IS_CLOUD:
                                 st.info("💡 If the dashboard doesn't open, **allow popups** for localhost in your browser.")
                             _launch_temporal(st.session_state.output_dir, master_job)
+                            if IS_CLOUD:
+                                st.rerun()  # re-render to show inline results panel
 
         # ── VALIDATION — the main focus ──
         if val:
