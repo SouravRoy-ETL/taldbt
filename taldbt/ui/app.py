@@ -21,12 +21,16 @@ def _safe_name(s: str, max_len: int = 80) -> str:
     clean = _re.sub(r'[^a-zA-Z0-9_\-. ()\[\]]', '', str(s))[:max_len]
     return _html.escape(clean)
 
-# Detect if running on Streamlit Cloud (no display, no localhost access)
-# Cloud runs as /home/adminuser with venv, mounted at /mount/src
-IS_CLOUD = os.environ.get('STREAMLIT_SHARING_MODE') == '1' or \
-           os.environ.get('IS_STREAMLIT_CLOUD', '') == '1' or \
-           os.path.exists('/mount/src') or \
-           os.path.expanduser('~') in ('/home/appuser', '/home/adminuser')
+# Detect if running on Streamlit Cloud
+# Primary signal: /mount/src exists (Streamlit Cloud clones repos there)
+# Secondary: home dir is /home/appuser or /home/adminuser
+# Tertiary: env vars set by Streamlit
+_home = os.path.expanduser('~')
+IS_CLOUD = os.path.exists('/mount/src') or \
+           _home.startswith('/home/appuser') or \
+           _home.startswith('/home/adminuser') or \
+           os.environ.get('STREAMLIT_SHARING_MODE') == '1' or \
+           os.environ.get('IS_STREAMLIT_CLOUD', '') == '1'
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -368,14 +372,16 @@ def make_zip(d):
 def _launch_temporal(output_dir, master_job):
     """Launch Temporal workflow execution.
     Local: CLI server + redirect to localhost:8233.
-    Cloud: Python SDK test server (no CLI needed) + inline results."""
-    import subprocess as sp
+    Cloud/fallback: run dbt models in DAG order + inline results."""
+    import subprocess as sp, shutil
     orch_dir = Path(output_dir) / "orchestration"
     if not orch_dir.exists() or not (orch_dir / "worker.py").exists():
         st.error("No Temporal files found. Run AutoPilot first.")
         return
 
-    if IS_CLOUD:
+    # Use cloud mode if IS_CLOUD OR if temporal CLI is not installed
+    has_cli = shutil.which("temporal") is not None
+    if IS_CLOUD or not has_cli:
         _launch_temporal_cloud(orch_dir, master_job)
     else:
         _launch_temporal_local(orch_dir, output_dir, master_job)
