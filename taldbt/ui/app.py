@@ -24,7 +24,8 @@ def _safe_name(s: str, max_len: int = 80) -> str:
 # Detect if running on Streamlit Cloud (no display, no localhost access)
 IS_CLOUD = os.environ.get('STREAMLIT_SHARING_MODE') == '1' or \
            os.environ.get('IS_STREAMLIT_CLOUD', '') == '1' or \
-           not os.path.exists('/mnt') and 'appuser' in os.path.expanduser('~')
+           os.path.expanduser('~').startswith('/home/appuser') or \
+           os.environ.get('HOSTNAME', '').endswith('.streamlit.app')
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
