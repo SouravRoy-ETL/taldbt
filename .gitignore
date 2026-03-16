@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+*.pyo
+*.duckdb
+*.duckdb.wal
+.streamlit/secrets.toml
+output/
+taldbt_out_*/
+*.zip
+training/
+null
+debug.log
+dev.duckdb
+.env
+*.egg-info/
+dist/
+build/

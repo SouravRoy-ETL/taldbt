@@ -1,0 +1,201 @@
+<script>
+(function(){
+    var doc = window.parent.document;
+    var old = doc.getElementById('taldbt-px');
+    if(old) old.remove();
+
+    var c = doc.createElement('canvas');
+    c.id = 'taldbt-px';
+    c.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:0;pointer-events:none;';
+    doc.body.appendChild(c);
+    var ctx = c.getContext('2d');
+    var W, H, mx = -999, my = -999, t = 0;
+
+    function rs(){ W = c.width = doc.documentElement.clientWidth; H = c.height = doc.documentElement.clientHeight; }
+    rs(); window.parent.addEventListener('resize', rs);
+    doc.addEventListener('mousemove', function(e){ mx = e.clientX; my = e.clientY; });
+    doc.addEventListener('mouseleave', function(){ mx = -999; my = -999; });
+
+    var CL = [
+        [255,105,75],[245,158,11],[59,130,246],[139,92,246],
+        [34,211,238],[192,132,252],[16,185,129],[251,113,133]
+    ];
+    function rgba(c,a){ return 'rgba('+c[0]+','+c[1]+','+c[2]+','+a+')'; }
+
+    var N = 250, P = [];
+    for(var i=0;i<N;i++){
+        var cl = CL[i % CL.length];
+        var orbitR = 60 + Math.random()*600;
+        var ang = Math.random()*Math.PI*2;
+        P.push({
+            x: 0, y: 0,
+            vx: 0, vy: 0,
+            r: 1.0 + Math.random()*2.0,
+            cl: cl,
+            a: 0.18 + Math.random()*0.42,
+            phase: Math.random()*6.28,
+            freq: 0.008 + Math.random()*0.015,
+            orbitR: orbitR,
+            orbitAng: ang,
+            orbitSpd: (0.0004 + Math.random()*0.0012) * (Math.random()>0.5?1:-1)
+        });
+    }
+
+    /* Place particles on their orbits initially */
+    function initPositions(){
+        var cx = W*0.5, cy = H*0.42;
+        for(var i=0;i<N;i++){
+            var p = P[i];
+            p.x = cx + Math.cos(p.orbitAng)*p.orbitR;
+            p.y = cy + Math.sin(p.orbitAng)*p.orbitR*0.7; /* slight ellipse */
+        }
+    }
+    initPositions();
+
+    /* ── Ripple system ── */
+    var ripples = [];
+
+    var lastMx = -999, lastMy = -999, moveAcc = 0;
+    function checkRipple(){
+        if(mx < 0) return;
+        var dx = mx - lastMx, dy = my - lastMy;
+        var spd = Math.sqrt(dx*dx + dy*dy);
+        moveAcc += spd;
+        lastMx = mx; lastMy = my;
+        /* Spawn ripple on significant movement */
+        if(moveAcc > 40){
+            ripples.push({ x: mx, y: my, radius: 0, maxR: 180 + Math.random()*120, life: 1.0 });
+            moveAcc = 0;
+        }
+    }
+
+    function draw(){
+        t++;
+        ctx.clearRect(0,0,W,H);
+
+        var cx = W*0.5, cy = H*0.42;
+
+        checkRipple();
+
+        /* ══ PARTICLES ══ */
+        for(var i=0;i<N;i++){
+            var p = P[i];
+
+            /* Orbit: advance angle */
+            p.orbitAng += p.orbitSpd;
+
+            /* Target position on orbit (elliptical) */
+            var tx = cx + Math.cos(p.orbitAng)*p.orbitR;
+            var ty = cy + Math.sin(p.orbitAng)*p.orbitR*0.7;
+
+            /* Spring toward orbit position (gravity well) */
+            var dx = tx - p.x, dy = ty - p.y;
+            p.vx += dx * 0.006;
+            p.vy += dy * 0.006;
+
+            /* Mouse repulsion — local ripple push */
+            if(mx > 0){
+                var mdx = p.x - mx, mdy = p.y - my;
+                var md = Math.sqrt(mdx*mdx + mdy*mdy);
+                if(md < 160 && md > 0){
+                    var f = (160 - md)/160 * 0.9;
+                    p.vx += (mdx/md)*f;
+                    p.vy += (mdy/md)*f;
+                }
+            }
+
+            /* Ripple waves push particles outward */
+            for(var ri=0; ri<ripples.length; ri++){
+                var rp = ripples[ri];
+                var rdx = p.x - rp.x, rdy = p.y - rp.y;
+                var rd = Math.sqrt(rdx*rdx + rdy*rdy);
+                /* Particle is near the ripple wavefront */
+                var waveDist = Math.abs(rd - rp.radius);
+                if(waveDist < 40 && rd > 0){
+                    var push = (1 - waveDist/40) * rp.life * 0.4;
+                    p.vx += (rdx/rd) * push;
+                    p.vy += (rdy/rd) * push;
+                }
+            }
+
+            /* Organic micro-drift */
+            p.vx += Math.sin(t*p.freq + p.phase)*0.001;
+            p.vy += Math.cos(t*p.freq*0.7 + p.phase)*0.0008;
+
+            /* Damping */
+            p.vx *= 0.97;
+            p.vy *= 0.97;
+
+            /* Move */
+            p.x += p.vx;
+            p.y += p.vy;
+
+            /* Pulse */
+            var pulse = 0.7 + Math.sin(t*0.012 + p.phase)*0.3;
+            var alpha = p.a * pulse;
+
+            /* Brighter near center */
+            var dcx = p.x-cx, dcy = p.y-cy;
+            var dc = Math.sqrt(dcx*dcx + dcy*dcy);
+            var maxR = Math.min(W,H)*0.4;
+            if(dc < maxR) alpha = Math.min(alpha + (1-dc/maxR)*0.25, 0.85);
+            var glow = 4 + (dc < maxR ? (1-dc/maxR)*12 : 0);
+
+            /* Draw */
+            ctx.save();
+            ctx.shadowBlur = glow;
+            ctx.shadowColor = rgba(p.cl, 0.5);
+            ctx.globalAlpha = alpha;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.r*(0.85+pulse*0.15), 0, Math.PI*2);
+            ctx.fillStyle = rgba(p.cl, 1);
+            ctx.fill();
+            ctx.restore();
+        }
+
+        /* ══ CONNECTION WEB ══ */
+        ctx.lineWidth = 0.5;
+        for(var i=0;i<N;i++){
+            var p = P[i];
+            if(i%2!==0) continue; /* check every other for perf */
+            for(var j=i+1;j<N;j+=2){
+                var q = P[j];
+                var adx = Math.abs(p.x-q.x), ady = Math.abs(p.y-q.y);
+                if(adx>120||ady>120) continue;
+                var dd = Math.sqrt(adx*adx+ady*ady);
+                if(dd < 110){
+                    var la = (1-dd/110)*0.15;
+                    /* Brighter near center */
+                    var mX=(p.x+q.x)*0.5, mY=(p.y+q.y)*0.5;
+                    var mD = Math.sqrt(Math.pow(mX-cx,2)+Math.pow(mY-cy,2));
+                    if(mD < maxR) la += (1-mD/maxR)*0.06;
+                    /* Brighter near mouse */
+                    if(mx>0){
+                        var mmD = Math.sqrt(Math.pow(mX-mx,2)+Math.pow(mY-my,2));
+                        if(mmD<160) la += (1-mmD/160)*0.1;
+                    }
+                    ctx.globalAlpha = Math.min(la, 0.28);
+                    ctx.beginPath();
+                    ctx.moveTo(p.x,p.y);
+                    ctx.lineTo(q.x,q.y);
+                    ctx.strokeStyle = rgba(p.cl, 1);
+                    ctx.stroke();
+                }
+            }
+        }
+
+        /* ══ Advance ripples (invisible — only physics, no drawing) ══ */
+        for(var i=ripples.length-1; i>=0; i--){
+            var rp = ripples[i];
+            rp.radius += 3;
+            rp.life -= 0.012;
+            if(rp.life <= 0) ripples.splice(i,1);
+        }
+        if(ripples.length > 8) ripples.splice(0, ripples.length-8);
+
+        ctx.globalAlpha = 1;
+        requestAnimationFrame(draw);
+    }
+    draw();
+})();
+</script>
