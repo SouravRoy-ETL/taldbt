@@ -46,9 +46,9 @@ from taldbt.engine.duckdb_engine import DuckDBEngine
 from taldbt.orchestration.autopilot import run_autopilot
 
 LOGO_PATH = Path(__file__).parent / "logo.svg"
-# Favicon: use our logo SVG, or fallback to emoji
-_FAVICON = str(LOGO_PATH) if LOGO_PATH.exists() else "⚡"
-st.set_page_config(page_title="taldbt — Talend to dbt Migration", page_icon=_FAVICON, layout="wide", initial_sidebar_state="collapsed")
+FAVICON_PATH = Path(__file__).parent / "favicon.svg"
+_FAVICON = str(FAVICON_PATH) if FAVICON_PATH.exists() else "⚡"
+st.set_page_config(page_title="taldbt — AI Powered Talend to dbt Migration", page_icon=_FAVICON, layout="wide", initial_sidebar_state="collapsed")
 
 # ═══════════════════════════════════════════════════════
 # Session
