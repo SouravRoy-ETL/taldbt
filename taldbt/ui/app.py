@@ -46,7 +46,9 @@ from taldbt.engine.duckdb_engine import DuckDBEngine
 from taldbt.orchestration.autopilot import run_autopilot
 
 LOGO_PATH = Path(__file__).parent / "logo.svg"
-st.set_page_config(page_title="taldbt", page_icon="⚡", layout="wide", initial_sidebar_state="collapsed")
+# Favicon: use our logo SVG, or fallback to emoji
+_FAVICON = str(LOGO_PATH) if LOGO_PATH.exists() else "⚡"
+st.set_page_config(page_title="taldbt — Talend to dbt Migration", page_icon=_FAVICON, layout="wide", initial_sidebar_state="collapsed")
 
 # ═══════════════════════════════════════════════════════
 # Session
@@ -426,7 +428,7 @@ def _launch_temporal_cloud(orch_dir, master_job):
         bar.progress(min(pct, 0.90), text=f"Running {_safe_name(model_name)} ({i+1}/{total})...")
         try:
             result = sp.run(
-                [sys.executable, "-m", "dbt", "run", "--select", model_name,
+                ["dbt", "run", "--select", model_name,
                  "--project-dir", dbt_project, "--profiles-dir", dbt_project],
                 capture_output=True, text=True, timeout=120,
             )
