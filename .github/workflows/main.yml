@@ -1,0 +1,13 @@
+name: Remove MD files from history
+on: workflow_dispatch
+jobs:
+  clean:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Remove all MD files from history
+        run: |
+          git filter-repo --invert-paths --path-glob '*.md' --path-glob '*.MD' --force
+          git push origin --force --all
