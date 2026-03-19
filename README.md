@@ -107,6 +107,3 @@ taldbt/
 
 - Python 3.10+
 - [Ollama](https://ollama.com) for local AI (optional — falls back to free cloud AI via Cerebras/Groq)
-
-
-Proprietary. Contact souravroy7864@gmail.com for licensing.
