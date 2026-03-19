@@ -7,10 +7,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ secrets.PAT_TOKEN }}
       - name: Install filter-repo
         run: pip install git-filter-repo
       - name: Remove all MD files from history
         run: |
           git filter-repo --invert-paths --path-glob '*.md' --path-glob '*.MD' --force
-          git remote add origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+          git remote add origin https://x-access-token:${{ secrets.PAT_TOKEN }}@github.com/SouravRoy-ETL/taldbt.git
           git push origin --force --all
