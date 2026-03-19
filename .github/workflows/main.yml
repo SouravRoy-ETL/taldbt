@@ -3,11 +3,12 @@ on: workflow_dispatch
 jobs:
   clean:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.PAT_TOKEN }}
       - name: Install filter-repo
         run: pip install git-filter-repo
       - name: Remove all MD files from history
